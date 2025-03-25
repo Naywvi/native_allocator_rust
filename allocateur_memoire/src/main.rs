@@ -1,29 +1,37 @@
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::alloc::{GlobalAlloc, Layout};
+use core::ptr::null_mut;
 
-const HEAP_SIZE: usize = 64 * 1024;
+unsafe impl GlobalAlloc for BumpAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        let heap_start = HEAP.0.as_ptr() as usize;
+        let heap_end = heap_start + HEAP_SIZE;
 
-#[repr(align(8))]
-struct AlignedHeap([u8; HEAP_SIZE]);
+        let mut current = self.next.load(Ordering::Relaxed);
 
-static mut HEAP: AlignedHeap = AlignedHeap([0; HEAP_SIZE]);
+        loop {
+            let alloc_start = Self::align_up(heap_start + current, layout.align());
+            let alloc_end = alloc_start + layout.size();
 
-pub struct BumpAllocator {
-    next: AtomicUsize,
-}
+            if alloc_end > heap_end {
+                return null_mut();
+            }
 
-impl BumpAllocator {
-    pub const fn new() -> Self {
-        BumpAllocator {
-            next: AtomicUsize::new(0),
+            let next_offset = alloc_end - heap_start;
+
+            match self.next.compare_exchange(
+                current,
+                next_offset,
+                Ordering::SeqCst,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return alloc_start as *mut u8,
+                Err(old) => current = old,
+            }
         }
     }
-    fn align_up(addr: usize, align: usize) -> usize {
-        (addr + align - 1) & !(align - 1)
-    }
-    pub fn allocated_bytes(&self) -> usize {
-        self.next.load(Ordering::Relaxed)
-    }
-    pub fn heap_size(&self) -> usize {
-        HEAP_SIZE
-    }
+
+    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {}
 }
+
+#[global_allocator]
+pub static ALLOCATOR: BumpAllocator = BumpAllocator::new();
