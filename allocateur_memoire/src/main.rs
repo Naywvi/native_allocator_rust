@@ -1,37 +1,35 @@
-use core::alloc::{GlobalAlloc, Layout};
-use core::ptr::null_mut;
+mod allocator;
 
-unsafe impl GlobalAlloc for BumpAllocator {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let heap_start = HEAP.0.as_ptr() as usize;
-        let heap_end = heap_start + HEAP_SIZE;
+use std::alloc::{alloc, Layout};
+use std::mem;
 
-        let mut current = self.next.load(Ordering::Relaxed);
+fn test_allocator() {
+    println!("\n------ * ------");
+    let a = Box::new(42u32);
+    println!("a = {}, address = {:p}, size = {} octets",a,a,mem::size_of_val(&*a));
 
-        loop {
-            let alloc_start = Self::align_up(heap_start + current, layout.align());
-            let alloc_end = alloc_start + layout.size();
+    let b = Box::new([0u8; 128]);
+    println!("b = [u8; 128], address = {:p}, size = {} octets",b.as_ptr(),mem::size_of_val(&*b));
 
-            if alloc_end > heap_end {
-                return null_mut();
-            }
+    let c = Box::new("hello rust");
+    println!("c = {}, address = {:p}, size = {} octets",c,c.as_ptr(),mem::size_of_val(&*c));
+    println!("\nMémoire utilisée : {} / {} octets",allocator::ALLOCATOR.allocated_bytes(),allocator::ALLOCATOR.heap_size());
 
-            let next_offset = alloc_end - heap_start;
+    // Allocation manuelle
+    let layout = Layout::from_size_align(64 * 1024, 8).unwrap();
 
-            match self.next.compare_exchange(
-                current,
-                next_offset,
-                Ordering::SeqCst,
-                Ordering::Relaxed,
-            ) {
-                Ok(_) => return alloc_start as *mut u8,
-                Err(old) => current = old,
-            }
+    unsafe {
+        let ptr = alloc(layout);
+        if ptr.is_null() {
+            println!("✅ Allocation échouée comme prévu (plus assez de mémoire)");
+        } else {
+            println!("❌ ATTENTION : allocation réussie alors qu’elle ne devrait pas");
         }
     }
-
-    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {}
+    println!("Mémoire après tentative : {} / {} octets",allocator::ALLOCATOR.allocated_bytes(),allocator::ALLOCATOR.heap_size());
+    println!("\n------ * ------");
 }
 
-#[global_allocator]
-pub static ALLOCATOR: BumpAllocator = BumpAllocator::new();
+fn main() {
+    test_allocator();
+}
