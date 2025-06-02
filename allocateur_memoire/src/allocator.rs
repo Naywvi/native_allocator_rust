@@ -1,6 +1,6 @@
 // Import des traits et types nécessaires à la gestion de la mémoire bas-niveau
 use core::alloc::{GlobalAlloc, Layout};          // Trait GlobalAlloc + Layout de blocs mémoire
-use core::ptr::null_mut;                         // Pour retourner un pointeur nul si échec d’allocation
+use core::ptr::null_mut;                         // Pour retourner un pointeur nul si échec d'allocation
 use core::sync::atomic::{AtomicUsize, Ordering}; // Permet une allocation thread-safe via des opérations atomiques
 
 // Taille totale du heap en octets : ici, 64 Ko

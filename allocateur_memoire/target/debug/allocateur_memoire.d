@@ -1,1 +1,1 @@
-C:\Users\nagib\Desktop\native_allocator_rust\allocateur_memoire\target\debug\allocateur_memoire.exe: C:\Users\nagib\Desktop\native_allocator_rust\allocateur_memoire\src\main.rs
+C:\Users\nagib\Desktop\native_allocator_rust\allocateur_memoire\target\debug\allocateur_memoire.exe: C:\Users\nagib\Desktop\native_allocator_rust\allocateur_memoire\src\allocator.rs C:\Users\nagib\Desktop\native_allocator_rust\allocateur_memoire\src\fat32.rs C:\Users\nagib\Desktop\native_allocator_rust\allocateur_memoire\src\main.rs
