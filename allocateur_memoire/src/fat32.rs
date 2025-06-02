@@ -138,7 +138,7 @@ impl Fat32FileSystem {
     // Paramètre : un buffer mémoire qui simule notre disque dur
     pub fn new(storage: &'static mut [u8]) -> Result<Self, &'static str> {
         // Vérification de taille minimale (1MB minimum pour avoir assez de place)
-        if storage.len() < 1024 * 1024 {  
+        if storage.len() < 1024 * 1024 {  // Minimum 1MB
             return Err("Storage trop petit pour FAT32");
         }
 
@@ -219,7 +219,7 @@ impl Fat32FileSystem {
         // = (taille_storage - zone_systeme) / taille_cluster
         fs.total_clusters = (fs.storage.len() as u32 - fs.data_start_sector * 512) / (8 * 512);
 
-        // Initialisation physique du système de fichiers
+       // Initialisation physique du système de fichiers
         fs.write_boot_sector()?;    // Écrire le boot sector sur le "disque"
         fs.initialize_fat()?;       // Initialiser la table FAT
 
@@ -234,7 +234,7 @@ impl Fat32FileSystem {
         let boot_sector_bytes = unsafe {
             core::slice::from_raw_parts(
                 &self.boot_sector as *const _ as *const u8,
-                core::mem::size_of::<Fat32BootSector>()  // Doit faire exactement 512 bytes
+                core::mem::size_of::<Fat32BootSector>()// Doit faire exactement 512 bytes
             )
         };
         
@@ -270,7 +270,7 @@ impl Fat32FileSystem {
         // FAT[1] = marqueur de fin de chaîne (toujours)
         self.write_fat_entry(1, CLUSTER_END)?;   
         // FAT[2] = répertoire racine (marqué comme utilisé)
-        self.write_fat_entry(2, CLUSTER_END)?;   
+        self.write_fat_entry(2, CLUSTER_END)?; 
 
         Ok(())
     }
@@ -300,7 +300,7 @@ impl Fat32FileSystem {
         // Les 4 bits de poids fort sont réservés et doivent être préservés
         // → https://wiki.osdev.org/FAT32#FAT_Entry_Values
         let masked_value = value & 0x0FFFFFFF;
-        let bytes = masked_value.to_le_bytes();  // Little-endian comme x86
+        let bytes = masked_value.to_le_bytes(); // Little-endian comme x86
         
         // Écriture des 4 octets dans le storage
         self.storage[entry_offset] = bytes[0];
@@ -310,7 +310,6 @@ impl Fat32FileSystem {
 
         // Note : dans une implémentation complète, il faudrait aussi écrire
         // dans la deuxième FAT pour la redondance
-
         Ok(())
     }
 
@@ -335,87 +334,12 @@ impl Fat32FileSystem {
             self.storage[entry_offset + 2],
             self.storage[entry_offset + 3],
         ]);
-
         // Masquer les 4 bits de poids fort (toujours faire ça en FAT32)
-    // Trouve un cluster libre dans la FAT
-    // Algorithme simple : scan linéaire de la FAT jusqu'à trouver une entrée à 0
-    // Note : dans un vrai OS, on utiliserait un bitmap ou une liste chaînée pour optimiser
-    pub fn find_free_cluster(&self) -> Result<u32, &'static str> {
-        // On commence au cluster 3 car 0,1,2 sont réservés/utilisés
-        for cluster in 3..self.total_clusters + 2 {  
-            if self.read_fat_entry(cluster)? == CLUSTER_FREE {
-                return Ok(cluster);
-            }
-        }
-        Err("Pas de cluster libre")  // Disque plein !
-    }
+        // Trouve un cluster libre dans la FAT
+        // Algorithme simple : scan linéaire de la FAT jusqu'à trouver une entrée à 0
+        // Note : dans un vrai OS, on utiliserait un bitmap ou une liste chaînée pour optimiser
 
-    // Alloue un nouveau cluster (le marque comme utilisé)
-    // C'est l'équivalent d'un malloc() mais pour les clusters
-    pub fn allocate_cluster(&mut self) -> Result<u32, &'static str> {
-        let cluster = self.find_free_cluster()?;
-        // Marquer comme fin de chaîne (fichier d'un seul cluster pour l'instant)
-        self.write_fat_entry(cluster, CLUSTER_END)?;
-        Ok(cluster)
-    }
-
-    // Convertit un numéro de cluster en offset physique dans le storage
-    // Formule magique : (cluster - 2) * taille_cluster + debut_zone_donnees
-    // Le "-2" vient du fait que les clusters de données commencent à 2
-    fn cluster_to_offset(&self, cluster: u32) -> usize {
-        let cluster_offset = cluster - 2;  // Normaliser (les clusters 0,1 ne sont pas dans la zone données)
-        (self.data_start_sector * 512) as usize +  // Début de la zone données
-        (cluster_offset * 8 * 512) as usize        // + position relative (8 secteurs/cluster * 512 octets/secteur)
-    }
-
-    // Écrit des données dans un cluster complet
-    // Un cluster = 8 secteurs = 8*512 = 4096 octets dans notre config
-    pub fn write_cluster(&mut self, cluster: u32, data: &[u8]) -> Result<(), &'static str> {
-        // Vérification que le cluster est valide
-        if cluster < 2 || cluster >= self.total_clusters + 2 {
-            return Err("Cluster invalide");
-        }
-
-        let offset = self.cluster_to_offset(cluster);
-        let cluster_size = 8 * 512;  // Taille fixe d'un cluster dans notre implémentation
-        
-        // Vérifier qu'on ne dépasse pas le storage
-        if offset + cluster_size > self.storage.len() {
-            return Err("Cluster dépasse le storage");
-        }
-
-        // Écrire les données (tronquer si trop grandes)
-        let write_size = data.len().min(cluster_size);
-        self.storage[offset..offset + write_size].copy_from_slice(&data[..write_size]);
-        
-        // Remplir le reste du cluster avec des zéros (important pour la sécurité)
-        // Évite de laisser des données d'anciens fichiers traîner
-        if write_size < cluster_size {
-            for i in offset + write_size..offset + cluster_size {
-                self.storage[i] = 0;
-            }
-        }
-
-        Ok(())
-    }
-
-    // Lit les données d'un cluster complet
-    // Retourne une slice qui pointe directement dans notre storage
-    pub fn read_cluster(&self, cluster: u32) -> Result<&[u8], &'static str> {
-        if cluster < 2 || cluster >= self.total_clusters + 2 {
-            return Err("Cluster invalide");
-        }
-
-        let offset = self.cluster_to_offset(cluster);
-        let cluster_size = 8 * 512;
-        
-        if offset + cluster_size > self.storage.len() {
-            return Err("Cluster dépasse le storage");
-        }
-
-        // Retourner une slice directement dans le storage (zero-copy)
-        Ok(&self.storage[offset..offset + cluster_size])
-    }0x0FFFFFFF)
+        Ok(entry & 0x0FFFFFFF)
     }
 
     // Affiche les informations détaillées du système de fichiers
